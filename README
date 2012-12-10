@@ -1,0 +1,31 @@
+Title:
+    Vanilla Auto-Tagger
+Author:
+    van@yande.re
+Date / Version:
+    2012 12 08 / v5
+Description:
+    Uses the yande.re API, pixiv, danbooru API and iqdb similarity search to
+    update the source and artist data of posts on https://yande.re
+    Roughly, code does this for all posts satistying initial query:
+    - Check for artist and circle tags and source
+    - If none, use iqdb to find similar posts on danbooru
+        - If match is good (>90%), check danbooru for source link, artist tag
+        - Follow source link and use iqdb to check that source is correct (i.e.
+          source image matches yande.re image)
+        - Use "Find artist" on yande.re to get artist tag
+        - If this fails, check that danbooru artist tag exists on yande.re and
+          use that
+    - If only source present, use iqdb to check that source is correct (i.e.
+      source image matches yande.re image)
+        - Use "Find artist" on yande.re to get artist tag
+        - If this fails, use danbooru artist DB to get artist, ensuring the tag
+          exists on yande.re
+Usage:
+	$./auto_tagger_5.py <limit> <apply>
+Where:
+	<limit> = number of posts to auto-tag
+	<apply> = True - apply tag and source changes
+		      False - do not apply tag and source changes
+Example:
+    $./auto_tagger_5.py 10 True
