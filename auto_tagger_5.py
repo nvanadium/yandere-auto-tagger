@@ -196,7 +196,7 @@ class Post:
     def artist(self):
         '''Find artist on imouto and danbooru using "Find artist" service.'''
         url = '/artist.xml'
-        query = {'url': self.source, 'limit': '10'}
+        query = {'url': self.source.encode('utf-8'), 'limit': '10'}
         artists = Data(self.mo, url=url, query=query, tag='artist')
         artists.get_data()
         values = [x.values() for x in artists.results]
@@ -208,7 +208,7 @@ class Post:
         if self.update_artist == False:
             base = 'http://danbooru.donmai.us'
             url = '/artist/index.xml'
-            query = {'name': self.source, 'limit': '10'}
+            query = {'name': self.source.encode('utf-8'), 'limit': '10'}
             artists = Data(self.mo, base=base, url=url, query=query,
                            tag='artist')
             artists.get_data()
