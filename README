@@ -3,29 +3,35 @@ Title:
 Author:
     van@yande.re
 Date / Version:
-    2012 12 08 / v5
+    2013 02 11 / v5
 Description:
     Uses the yande.re API, pixiv, danbooru API and iqdb similarity search to
     update the source and artist data of posts on https://yande.re
     Roughly, code does this for all posts satistying initial query:
-    - Check for artist and circle tags and source
-    - If none, use iqdb to find similar posts on danbooru
-        - If match is good (>90%), check danbooru for source link, artist tag
-        - Follow source link and use iqdb to check that source is correct (i.e.
-          source image matches yande.re image)
-        - Use "Find artist" on yande.re to get artist tag
-        - If this fails, check that danbooru artist tag exists on yande.re and
-          use that
-    - If only source present, use iqdb to check that source is correct (i.e.
-      source image matches yande.re image)
-        - Use "Find artist" on yande.re to get artist tag
-        - If this fails, use danbooru artist DB to get artist, ensuring the tag
-          exists on yande.re
+    - Check for source, artist and circle tags
+    - If source is present, but no artist or circle
+        - Use "Find artist" on yande.re and danbooru to get artist tag
+    - If no source, use iqdb to find similar posts on danbooru
+        - If match is good (>90%), check danbooru for source link
+        - If source found on danbooru, but no artist or circle on yande.re
+            - Use "Find artist" on yande.re and danbooru to get artist tag
+    Script checks that artist tags from danbooru exist on yande.re before adding
+    Script will also replace pixiv sources that contain 'member_illust' with the
+    direct link to the full-sized image
+Requires:
+    A config file named 'config.cfg' in the same directory as this script.
+    Edit the provided config.cfg with your username and password info for your
+    accounts on yande.re, pixiv and danbooru.
+    Logging in is required for making changes on yande.re, for seeing R-18 posts
+    on pixiv, and for some xml queries on danbooru.
+    It is recommended that you create secondary accounts on the 3 sites solely
+    for this script's use, so that your primary account passwords are not
+    stored on disk.
 Usage:
 	$./auto_tagger_5.py <limit> <apply>
 Where:
 	<limit> = number of posts to auto-tag
 	<apply> = True - apply tag and source changes
-		      False - do not apply tag and source changes
+                  False - do not apply tag and source changes (e.g. for testing)
 Example:
     $./auto_tagger_5.py 10 True

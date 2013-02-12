@@ -7,32 +7,38 @@ Title:
 Author:
     van@yande.re
 Date / Version:
-    2012 12 08 / v5
+    2013 02 11 / v5
 Description:
     Uses the yande.re API, pixiv, danbooru API and iqdb similarity search to
     update the source and artist data of posts on https://yande.re
     Roughly, code does this for all posts satistying initial query:
-    - Check for artist and circle tags and source
-    - If none, use iqdb to find similar posts on danbooru
-        - If match is good (>90%), check danbooru for source link, artist tag
-        - Follow source link and use iqdb to check that source is correct (i.e.
-          source image matches yande.re image)
-        - Use "Find artist" on yande.re to get artist tag
-        - If this fails, check that danbooru artist tag exists on yande.re and
-          use that
-    - If only source present, use iqdb to check that source is correct (i.e.
-      source image matches yande.re image)
-        - Use "Find artist" on yande.re to get artist tag
-        - If this fails, use danbooru artist DB to get artist, ensuring the tag
-          exists on yande.re
+    - Check for source, artist and circle tags
+    - If source is present, but no artist or circle
+        - Use "Find artist" on yande.re and danbooru to get artist tag
+    - If no source, use iqdb to find similar posts on danbooru
+        - If match is good (>90%), check danbooru for source link
+        - If source found on danbooru, but no artist or circle on yande.re
+            - Use "Find artist" on yande.re and danbooru to get artist tag
+    Script checks that artist tags from danbooru exist on yande.re before adding
+    Script will also replace pixiv sources that contain 'member_illust' with the
+    direct link to the full-sized image
+Requires:
+    A config file named 'config.cfg' in the same directory as this script.
+    Edit the provided config.cfg with your username and password info for your
+    accounts on yande.re, pixiv and danbooru.
+    Logging in is required for making changes on yande.re, for seeing R-18 posts
+    on pixiv, and for some xml queries on danbooru.
+    It is recommended that you create secondary accounts on the 3 sites solely
+    for this script's use, so that your primary account passwords are not
+    stored on disk.
 Usage:
-  $./auto_tagger_5.py <limit> <apply>
+	$./auto_tagger_5.py <limit> <apply>
 Where:
 	<limit> = number of posts to auto-tag
 	<apply> = True - apply tag and source changes
-		      False - do not apply tag and source changes
+		      False - do not apply tag and source changes (e.g. for testing)
 Example:
-    $./auto-tagger-5.py 10 True
+    $./auto_tagger_5.py 10 True
 '''
 
 __all__= ['Login', 'Data', 'Post']
@@ -40,29 +46,10 @@ __all__= ['Login', 'Data', 'Post']
 import urllib
 import urllib2
 import re
-import time
 import sys
+import ConfigParser
 from lxml import etree
 
-global apply, limit
-
-#Set whether to apply tag and source changes.
-if sys.argv[2] == 'True':
-    apply = True
-else:
-    apply = False
-#Number of items to return in xml query.
-limit = sys.argv[1]
-
-base = 'https://yande.re'
-
-#Edit these to correspond to your accounts on yande.re, pixiv, and danbooru.
-yandere_username = 'yourusername'
-yandere_password = 'yourpassword'
-pixiv_username = 'yourusername'
-pixiv_password = 'yourpassword'
-danbooru_username = 'yourusername'
-danbooru_password = 'yourpassword'
 
 class Login:
     
@@ -83,8 +70,10 @@ class Login:
 
 class Data:
     
+    '''Perform query and parse xml or html result.'''
+    
     def __init__(self, opener, type='xml', base='https://yande.re',
-                 url='/post.xml', query={'tags': 'limit:'+limit}, tag='post'):
+                 url='/post.xml', query={'tags': 'limit:25'}, tag='post'):
         self.opener = opener
         self.type = type
         self.url = base + url
@@ -151,7 +140,7 @@ class Post:
                 self.has_artist = True
                 print '    Has artist:', tag
                 break
-        if self.has_artist==False:
+        if self.has_artist == False:
             for tag in tags:
                 query = {'name': tag.encode('utf-8'), 'type': '5',
                          'order': 'count'}
@@ -159,17 +148,17 @@ class Post:
                 circles.get_data()
                 values = flatten([x.values() for x in circles.results])
                 if tag in values:
-                    self.has_circle=True
+                    self.has_circle = True
                     print '    Has cirlce:', tag
                     break
         if (self.has_source and (self.has_artist or self.has_circle) and
-            re.search('member_illust', self.source) == None):
+            'member_illust' not in self.source):
             self.complete = True
             print '    Post is complete'
 
     def member(self):
         '''Check for member_illust pixiv sources and change to proper source.'''
-        if re.search('member_illust', self.source) != None:
+        if 'member_illust' in self.source:
             pixiv = Data(self.po, type='html', base=self.source, url='',
                          query={}, tag='meta')
             pixiv.get_data()
@@ -255,28 +244,65 @@ class Post:
                 query = {'tags': 'id:'+id}
                 dan = Data(self.do, base=base, url=url, query=query)
                 dan.get_data()
-                values = dan.results[0].values()
-                keys = dan.results[0].keys()
-                source = values[keys.index('source')]
-                crap = ['yande.re', 'oreno', 'kobato', 'kurisu', 'mage board',
-                        'moe-ren']
-                if source != '':
-                    total = sum([(x in source) for x in crap])
-                    if total == 0:
-                        self.source = source
-                        self.update_source = True
-                        print '    Found source on danbooru:', self.source
+                if dan.results != []:
+                    values = dan.results[0].values()
+                    keys = dan.results[0].keys()
+                    source = values[keys.index('source')]
+                    crap = ['yande.re', 'oreno', 'kobato', 'kurisu', 'mage board',
+                            'moe-ren']
+                    if source != '':
+                        total = sum([(x in source) for x in crap])
+                        if total == 0:
+                            self.source = source
+                            self.update_source = True
+                            print '    Found source on danbooru:', self.source
+                        else:
+                            print '    Cyclic reference or image board source:', source
                     else:
-                        print '    Cyclic reference or image board source:', source
+                        print '    Empty source on danbooru'
                 else:
-                    print '    Empty source on danbooru'
+                    print '    Post deleted from danbooru'
         else:
-            print '    No match on iqdb'
+            print '    No match on danbooru'
+
+    def iqdb2(self):
+        '''
+        Check on iqdb for matches on danbooru for current post, update source
+        tag if appropriate. Uses the xml api rather than html.
+        '''
+        base = 'http://danbooru.iqdb.org'
+        url='/index.xml'
+        query = {'url': self.preview_url}
+        iq = Data(self.po, base=base, url=url, query=query,
+                  tag='match')
+        iq.get_data()
+        values = iq.results[0].values()
+        keys = iq.results[0].keys()
+        similarity = int(float(values[keys.index('sim')]))
+        print '    Searching danbooru with iqdb - best similarity:', similarity
+        if similarity >= 90:
+            post = iq.results[0].getchildren()[0]
+            #values = post.values()
+            #keys = post.keys()
+            source = post.values()[post.keys().index('source')]
+            #source = values[keys.index('source')]
+            crap = ['yande.re', 'oreno', 'kobato', 'kurisu', 'mage board',
+                    'moe-ren']
+            if source != '':
+                total = sum([(x in source) for x in crap])
+                if total == 0:
+                    self.source = source
+                    self.update_source = True
+                    print '    Found source on danbooru:', self.source
+                else:
+                    print '    Cyclic reference or image board source:', source
+            else:
+                print '    Empty source on danbooru'
 
     def update(self):
         '''Update source and artist tag.'''
         url = '/post/update.xml'
-        if apply:
+        if APPLY:
             if self.update_source:
                 query = {'id': self.id,
                          'post[source]': self.source.encode('utf-8')}
@@ -298,17 +324,34 @@ def flatten(a):
 
 if __name__ == '__main__':
     
+    global APPLY
+
+    #Set whether to apply tag and source changes.
+    if sys.argv[2] == 'True':
+        APPLY = True
+    else:
+        APPLY = False
+    #Number of posts to try to update, starting from most recent.
+    limit = sys.argv[1]
+    
+    base = 'https://yande.re'
+    
+    #Read user info from config file.
+    config = ConfigParser.ConfigParser()
+    config.read('config.cfg')
+    
     #Specify login parameters.
     moe_url = '/user/authenticate'
-    moe_params = {'commit': 'Login', 'url': '', 'user[name]': yandere_username,
-                  'user[password]': yandere_password}
+    moe_params = {'commit': 'Login', 'url': '',
+                  'user[name]': config.get('yandere', 'username'),
+                  'user[password]': config.get('yandere', 'password')}
     pixiv_url='http://www.pixiv.net/login.php'
-    pixiv_params = {'mode': 'login', 'pixiv_id': pixiv_username,
-                    'pass': pixiv_password}
+    pixiv_params = {'mode': 'login', 'pixiv_id': config.get('pixiv', 'username'),
+                    'pass': config.get('pixiv' ,'password')}
     danbooru_url = 'http://danbooru.donmai.us/user/authenticate'
     danbooru_params = {'commit': 'Login', 'url': '',
-                       'user[name]': danbooru_username,
-                       'user[password]': danbooru_password}
+                       'user[name]': config.get('danbooru', 'username'),
+                       'user[password]': config.get('danbooru', 'password')}
     
     #Create openers.
     l = Login(base + moe_url, moe_params)
@@ -323,10 +366,9 @@ if __name__ == '__main__':
 
     #Get data from yande.re
     #query = {'tags': 'source:*member_illust* limit:'+limit}
-    #m = Data(mo, query=query)
-    m = Data(mo)
+    query = {'tags': 'limit:'+limit}
+    m = Data(mo, query=query)
     m.get_data()
-    #Update posts where possible.
     for x in m.results:
         n = Post(x, mo, po, do)
         n.check()
